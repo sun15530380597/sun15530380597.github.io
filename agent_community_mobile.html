@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>雪域智服 · 万龙滑雪场</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      /* 改主色：改下面 brand 这行 + 下方样式表 :root 的 --brand，两处保持一致 */
+      colors: {
+        page:      '#EEF5FB',
+        surface:   '#FFFFFF',
+        line:      '#D6E6F3',
+        ink:       '#0F2A40',
+        mist:      '#6C8AA5',
+        brand:     '#3F8FD4',
+        brandsoft: '#E3F0FB',
+        warn:      '#D98A2B',
+        eco:       '#369B6B'
+      },
+      fontFamily: {
+        sans: ['"PingFang SC"','"Microsoft YaHei"','"Source Han Sans SC"','ui-sans-serif','sans-serif'],
+        mono: ['ui-monospace','SFMono-Regular','Menlo','Consolas','monospace']
+      },
+      borderRadius: { card: '10px', chip: '6px' }
+    }
+  }
+}
+</script>
+<style>
+  :root { --brand: #3F8FD4; --eco: #369B6B; --warn: #D98A2B; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { background: #EEF5FB; -webkit-font-smoothing: antialiased; }
+  .no-sb::-webkit-scrollbar { display: none; }
+  .no-sb { scrollbar-width: none; }
+  .view { display: none; }
+  .view.active { display: block; animation: viewIn .24s cubic-bezier(.33,0,.15,1); }
+  @keyframes viewIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .bar { transition: width .7s cubic-bezier(.33,0,.15,1); }
+  .feed-item { transition: opacity .32s ease, transform .32s ease; }
+  .feed-enter { opacity: 0; transform: translateY(-8px); }
+  .focusable:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+  .toast { transition: opacity .24s ease, transform .24s ease; }
+  .toast.hide { opacity: 0; transform: translateY(8px); pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .view.active { animation: none; }
+    .bar, .feed-item, .toast { transition: none; }
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body class="bg-page text-ink font-sans antialiased">
+
+<div class="mx-auto w-full max-w-[430px] min-h-screen bg-page flex flex-col relative">
+
+  <header class="sticky top-0 z-30 bg-page border-b border-line">
+    <div class="px-4 pt-3 pb-2.5 flex items-center gap-2.5">
+      <svg viewBox="0 0 24 24" class="w-6 h-6 text-brand shrink-0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M1.5 19.5h21"/>
+        <path d="M3 18.5 9 7.5l3.4 5.6L15.4 8l5.6 10.5"/>
+        <path d="M9 7.5V3.4"/>
+        <circle cx="9" cy="2.5" r="1.1"/>
+      </svg>
+      <div class="min-w-0">
+        <div class="text-[14.5px] font-semibold leading-tight">雪域智服</div>
+        <div class="text-[10.5px] text-mist leading-tight mt-0.5">万龙滑雪场 · 崇礼红花梁</div>
+      </div>
+      <div class="ml-auto text-right shrink-0">
+        <div class="font-mono text-[12px] leading-none" id="clock">08:42:16</div>
+        <div class="text-[10px] text-mist leading-none mt-1">日场 08:30–16:30</div>
+      </div>
+    </div>
+
+    <div class="px-4 pb-3">
+      <div class="flex p-[3px] bg-brandsoft rounded-chip" role="tablist" aria-label="端口切换">
+        <button data-role="guest" class="role-btn focusable flex-1 py-1.5 text-[12.5px] font-medium rounded-[5px] transition-colors">游客端</button>
+        <button data-role="ops" class="role-btn focusable flex-1 py-1.5 text-[12.5px] font-medium rounded-[5px] transition-colors">雪场端</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="views" class="flex-1 px-4 pt-4 pb-28"></main>
+
+  <nav class="fixed inset-x-0 bottom-0 z-40" style="padding-bottom:env(safe-area-inset-bottom)">
+    <div class="mx-auto max-w-[430px] bg-surface border-t border-line">
+      <div class="grid grid-cols-5" id="tabbar"></div>
+    </div>
+  </nav>
+
+  <div id="toast" class="toast hide fixed z-50 mx-auto max-w-[430px] left-0 right-0 bottom-24 px-4 pointer-events-none">
+    <div class="bg-ink text-white text-[12.5px] px-3.5 py-2.5 rounded-card text-center" id="toast-text"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ============ 数据（基准：万龙滑雪场公开资料；实时数值为演示示意） ============ */
+const RESORT = { name:'万龙滑雪场', altitude:'2110.3 m', drop:'550 m', trails:32, lifts:7, carpets:3, capacity:14530 };
+
+const LIFTS = [
+  { no:'1 号索道', serve:'金龙道 · 银龙道', queue:86, q30:120, cap:120 },
+  { no:'2 号索道', serve:'长龙道 · 玉龙道', queue:54, q30:62, cap:120 },
+  { no:'3 号索道', serve:'云龙道', queue:38, q30:44, cap:120 },
+  { no:'4 号索道', serve:'猛龙道', queue:21, q30:18, cap:120 },
+  { no:'5 号索道', serve:'山顶观景 · 野雪入口', queue:12, q30:15, cap:100 },
+  { no:'6 号索道', serve:'高级道接驳', queue:29, q30:35, cap:100 },
+  { no:'7 号索道', serve:'夜场专用', queue:0, q30:0, cap:100 },
+  { no:'魔毯 A / B / C', serve:'初级教学区', queue:17, q30:22, cap:90 }
+];
+
+const TRAILS = [
+  { name:'金龙道', grade:'高级', line:'dot',  len:'1,800 m', slope:'平均 18° · 最大 32°', density:14, d30:19, open:true },
+  { name:'银龙道', grade:'高级', line:'dot',  len:'1,600 m', slope:'平均 22° · 最大 35°', density:11, d30:13, open:true },
+  { name:'猛龙道', grade:'高级', line:'dot',  len:'1,250 m', slope:'天然雪包地形', density:6,  d30:8,  open:true },
+  { name:'长龙道', grade:'中级', line:'dash', len:'2,100 m', slope:'平均 14°', density:23, d30:31, open:true },
+  { name:'玉龙道', grade:'中级', line:'dash', len:'1,750 m', slope:'平均 12°', density:18, d30:16, open:true },
+  { name:'云龙道', grade:'中级', line:'dash', len:'1,550 m', slope:'平均 13°', density:16, d30:22, open:true },
+  { name:'卧龙道', grade:'初级', line:'solid', len:'620 m',  slope:'8° – 12°', density:31, d30:38, open:true },
+  { name:'游龙道', grade:'初级', line:'solid', len:'580 m',  slope:'9° – 12°', density:26, d30:24, open:true },
+  { name:'树林野雪区', grade:'野雪', line:'wild', len:'1,200 m', slope:'天然地形 · 无压雪', density:4, d30:5, open:true },
+  { name:'地形公园', grade:'公园', line:'wild', len:'480 m', slope:'跳台 / 铁杆 / box', density:0, d30:0, open:false }
+];
+
+const SERVICES = [
+  { cat:'住宿', name:'龙宫酒店', code:'STAY-01', info:'滑进滑出 · 余房 12 / 86', dist:'距雪具大厅 120 m', detail:'标准间含双早，雪具寄存免费，前台 24 小时值守。' },
+  { cat:'住宿', name:'双龙酒店', code:'STAY-02', info:'ski-in / ski-out · 余房 5 / 64', dist:'紧邻 1 号索道下站', detail:'出门即上雪道，适合连续多日滑行。' },
+  { cat:'住宿', name:'万龙国际公寓', code:'STAY-03', info:'公寓式 · 余房 23 / 110', dist:'距雪具大厅 460 m', detail:'带独立厨房，适合家庭与长住客群。' },
+  { cat:'餐饮', name:'双龙美食轩', code:'FOOD-01', info:'川菜 / 东北菜 · 等候 15 min', dist:'酒店二层', detail:'营业 07:00–21:30，滑后正餐首选。' },
+  { cat:'餐饮', name:'双龙食府', code:'FOOD-02', info:'中西自助 · 等候 8 min', dist:'酒店一层', detail:'午市 11:30 开餐，中途补给方便。' },
+  { cat:'餐饮', name:'雪具大厅美食广场', code:'FOOD-03', info:'涮羊肉 / 羊蝎子 · 等候 22 min', dist:'雪具大厅二层', detail:'当前接近满载，建议取号后先归还雪具。' },
+  { cat:'租赁', name:'雪具大厅', code:'RENT-01', info:'雪具 1,400+ 套 · 排队 8 人', dist:'距入口 90 m', detail:'鞋板杖头盔 / 雪服 / 雪镜可分级租用。' },
+  { cat:'教学', name:'万龙滑雪学校', code:'SKI-01', info:'在岗教练 312 人 · 最快 20 min', dist:'雪具大厅旁', detail:'2003 年成立，零基础到高山竞技课程均有。' },
+  { cat:'医疗', name:'雪地巡逻医疗站', code:'MED-01', info:'值守中 · 巡逻员 18 人', dist:'1 号索道下站', detail:'联动智慧救治平台，平均出警 4 分钟。' },
+  { cat:'交通', name:'太子城站接驳', code:'BUS-01', info:'下一班 08:55 · 车程 18 min', dist:'停车场 P1', detail:'高铁太子城站往返雪场，雪季每日循环发车。' },
+  { cat:'停车', name:'P1 停车场', code:'PARK-01', info:'余位 213 / 600', dist:'距雪具大厅 150 m', detail:'近场车位，雪季高峰建议 09:00 前到达。' }
+];
+
+const ECO = { todayKm:18.6, totalKm:126.4, points:316, co2:22.8, kmToPoint:2.5, kmToCo2:0.18 };
+
+const REWARDS = [
+  { name:'雪具大厅热饮（姜茶 / 热巧）', cost:60,  stock:'今日剩 40 份', tag:'饮品' },
+  { name:'万龙文创雪板贴 + 徽章', cost:120, stock:'库存 86 件', tag:'文创' },
+  { name:'双龙美食轩 30 元代金券', cost:260, stock:'剩余 12 张', tag:'餐饮' },
+  { name:'万龙定制毛线帽', cost:420, stock:'剩余 6 顶', tag:'文创' }
+];
+
+const CAMS = [
+  { id:'CAM-01', loc:'1 号索道下站', on:true },
+  { id:'CAM-02', loc:'金龙道中段', on:true },
+  { id:'CAM-03', loc:'银龙道上段', on:true },
+  { id:'CAM-04', loc:'长龙道出口', on:true },
+  { id:'CAM-05', loc:'长龙道中段', on:true },
+  { id:'CAM-06', loc:'长龙道 K1+200', on:true },
+  { id:'CAM-07', loc:'云龙道中段', on:false },
+  { id:'CAM-08', loc:'玉龙道下段', on:true },
+  { id:'CAM-09', loc:'卧龙道起点', on:true },
+  { id:'CAM-10', loc:'地形公园入口', on:true },
+  { id:'CAM-11', loc:'野雪区入口', on:true },
+  { id:'CAM-12', loc:'雪具大厅外场', on:true }
+];
+
+const EVENTS = [
+  { type:'摔倒 · 后仰失稳', risk:'中', loc:'长龙道 K1+200', cam:'CAM-06', act:'巡逻队已出动 · 预计 3 min 抵达' },
+  { type:'逆行', risk:'中', loc:'长龙道出口段', cam:'CAM-04', act:'雪道广播已提示' },
+  { type:'长时间静止', risk:'低', loc:'1 号索道下站', cam:'CAM-01', act:'已核实无碍' },
+  { type:'未佩戴头盔', risk:'低', loc:'卧龙道起点', cam:'CAM-09', act:'闸机已提示' },
+  { type:'脱离雪道', risk:'中', loc:'野雪区入口西侧', cam:'CAM-11', act:'巡逻队前往确认' }
+];
+
+const OPS = { inPark:8420, visitors:3186, trailsOpen:28, alerts:3, greenPower:68, kwh:42600, snowmakingKwh:18400, liftKwh:11200, co2Cut:3.86 };
+
+/* ============ 图标（纯描边） ============ */
+const S = 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+const ICON = {
+  snow:    `<svg viewBox="0 0 24 24" ${S}><path d="M12 2.5v19M4 7l16 9.5M20 7L4 16.5M12 6.5 9.5 4M12 6.5 14.5 4M12 17.5 9.5 20M12 17.5 14.5 20"/></svg>`,
+  trail:   `<svg viewBox="0 0 24 24" ${S}><path d="M2 19.5h20M4 17l5-8.5 3.5 5L15 9.5l5 7.5"/></svg>`,
+  service: `<svg viewBox="0 0 24 24" ${S}><path d="M4.5 20.5V6.8L12 3.5l7.5 3.3v13.7M3 20.5h18M12 11.5v4"/></svg>`,
+  eco:     `<svg viewBox="0 0 24 24" ${S}><path d="M20 4C10.5 4 4.5 9 4.5 15.8c0 2.2 1.2 3.7 3.3 3.7C14.9 19.5 20 14.5 20 4Z"/><path d="M4.5 19.5C8.5 15.5 12.5 12.5 16.5 10.5"/></svg>`,
+  me:      `<svg viewBox="0 0 24 24" ${S}><circle cx="12" cy="8" r="3.4"/><path d="M5 20.5c0-4 3.1-6.6 7-6.6s7 2.6 7 6.6"/></svg>`,
+  dash:    `<svg viewBox="0 0 24 24" ${S}><path d="M3.5 19.5a8.5 8.5 0 1 1 17 0"/><path d="M12 19.5l4.2-5.4"/><circle cx="12" cy="19.5" r="1.1"/></svg>`,
+  flow:    `<svg viewBox="0 0 24 24" ${S}><path d="M2.5 20.5h19M4.5 20.5v-6.5M9.5 20.5v-12M14.5 20.5v-8.5M19.5 20.5v-15"/></svg>`,
+  shield:  `<svg viewBox="0 0 24 24" ${S}><path d="M12 3.5 20 6.6v5.6c0 4.7-3.3 7.6-8 8.7-4.7-1.1-8-4-8-8.7V6.6l8-3.1Z"/></svg>`,
+  gear:    `<svg viewBox="0 0 24 24" ${S}><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg>`,
+  recycle: `<svg viewBox="0 0 24 24" ${S}><path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4"/><path d="M20.5 4v4.6h-4.6"/></svg>`
+};
+
+/* ============ 工具 ============ */
+function esc(v) { return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function loadState(q, cap) { return q / cap; }
+function loadColor(r) { return r >= 0.5 ? 'var(--brand)' : '#A9C4DA'; }
+function loadText(r) {
+  if (r >= 0.75) return { t:'拥挤', c:'text-warn', b:'border-warn' };
+  if (r >= 0.4)  return { t:'偏挤', c:'text-brand', b:'border-brand' };
+  return { t:'通畅', c:'text-mist', b:'border-line' };
+}
+function densityText(d) {
+  if (d >= 30) return { t:'拥挤', c:'text-warn', b:'border-warn' };
+  if (d >= 15) return { t:'偏挤', c:'text-brand', b:'border-brand' };
+  return { t:'通畅', c:'text-mist', b:'border-line' };
+}
+function trailLine(kind) {
+  const map = { solid:'none', dash:'5 3.5', dot:'1.6 2.8', wild:'7 3 1.6 3' };
+  return `<svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="currentColor" stroke-width="1.6" stroke-dasharray="${map[kind] || 'none'}"/></svg>`;
+}
+function sectionHead(title, sub) {
+  return `<div class="flex items-baseline justify-between gap-3 mb-3">
+    <h2 class="text-[15px] font-semibold">${esc(title)}</h2>
+    ${sub ? `<span class="text-[11px] text-mist">${esc(sub)}</span>` : ''}
+  </div>`;
+}
+function liftRow(l, i, guestMode) {
+  const r = loadState(l.queue, l.cap);
+  const st = loadText(r);
+  return `<div class="px-4 py-3">
+    <div class="flex items-center gap-2.5">
+      <span class="text-[12.5px] font-medium shrink-0">${esc(l.no)}</span>
+      <span class="text-[10.5px] text-mist truncate">${esc(l.serve)}</span>
+      <span class="ml-auto shrink-0 px-1.5 py-[2px] rounded-[4px] border text-[10px] ${st.b} ${st.c}">${st.t}</span>
+    </div>
+    <div class="mt-2 flex items-center gap-3">
+      <div class="flex-1 h-[4px] rounded-full bg-brandsoft overflow-hidden">
+        <div class="bar h-full rounded-full" id="bar-${i}" style="width:${Math.round(r*100)}%;background:${loadColor(r)}"></div>
+      </div>
+      <span class="font-mono text-[12px] shrink-0 w-[74px] text-right"><span id="q-${i}">${l.queue}</span><span class="text-mist text-[10.5px]"> 人</span></span>
+    </div>
+    ${guestMode ? `<div class="mt-1.5 text-[10.5px] text-mist font-mono">30 min 后 <span id="q30-${i}">${l.q30}</span> 人</div>` : ''}
+  </div>`;
+}
+
+/* ============ 游客端 ============ */
+function guestSnow() {
+  return `
+  <div class="rounded-card bg-surface border border-line p-4">
+    <div class="flex items-start justify-between">
+      <div>
+        <div class="text-[12px] text-mist">今日雪况 · 08:42 实测</div>
+        <div class="mt-1.5 flex items-baseline gap-1.5">
+          <span class="font-mono text-[30px] leading-none font-semibold">-14</span>
+          <span class="text-[13px] text-mist">℃ 气温</span>
+        </div>
+      </div>
+      <div class="text-right">
+        <div class="text-[11px] text-mist">24h 新雪</div>
+        <div class="font-mono text-[19px] leading-none mt-1.5">8<span class="text-[11px] text-mist ml-0.5">cm</span></div>
+      </div>
+    </div>
+    <div class="mt-4 grid grid-cols-3 gap-px bg-line rounded-chip overflow-hidden">
+      ${[['雪温','-19.4 ℃'],['风速','3.8 m/s'],['能见度','6.0 km']].map(([k,v])=>`<div class="bg-surface px-2.5 py-2.5"><div class="text-[10.5px] text-mist">${k}</div><div class="font-mono text-[12.5px] mt-1">${v}</div></div>`).join('')}
+    </div>
+    <div class="mt-4 flex flex-wrap items-center gap-2 text-[11.5px]">
+      <span class="px-2 py-[3px] rounded-chip bg-brandsoft text-brand">雪质 粉雪</span>
+      <span class="px-2 py-[3px] rounded-chip bg-brandsoft text-brand">含水率 6%</span>
+      <span class="px-2 py-[3px] rounded-chip border border-line text-mist">最高 2110.3 m</span>
+    </div>
+  </div>
+
+  <div class="mt-6">
+    ${sectionHead('索道运行', `7 条索道 · 3 条魔毯 · 运力 ${RESORT.capacity.toLocaleString()} 人/时`)}
+    <div class="rounded-card bg-surface border border-line divide-y divide-line">${LIFTS.map((l,i)=>liftRow(l,i,true)).join('')}</div>
+  </div>
+
+  <div class="mt-6">
+    ${sectionHead('今日推荐', '综合雪质与人流')}
+    <div class="rounded-card bg-surface border border-line p-4">
+      <div class="flex items-center gap-2.5">
+        <span class="text-brand">${trailLine('dash')}</span>
+        <span class="text-[13.5px] font-medium">玉龙道</span>
+        <span class="text-[11px] text-mist">中级 · 1,750 m · 平均 12°</span>
+      </div>
+      <p class="text-[12px] text-mist mt-2.5 leading-relaxed">当前密度 <span class="font-mono text-ink">18</span> 人/公顷，1 小时后人流回落。压雪车凌晨完成整备，雪面平整度优。</p>
+    </div>
+  </div>
+
+  <p class="text-[10.5px] text-mist mt-6 leading-relaxed">雪质、索道与运营参数基准取自万龙滑雪场公开资料；实时读数与预测为演示示意值。</p>`;
+}
+
+function guestTrails() {
+  const grades = ['全部','初级','中级','高级','野雪'];
+  return `
+  <div class="flex gap-2 overflow-x-auto no-sb -mx-4 px-4 pb-1" id="grade-filter">
+    ${grades.map((g,i)=>`<button data-grade="${g}" class="grade-btn focusable shrink-0 px-3 py-1.5 text-[12px] rounded-chip border ${i===0?'bg-brand text-white border-brand':'border-line text-mist bg-surface'}">${g}</button>`).join('')}
+  </div>
+  <div class="mt-3.5 space-y-2.5" id="trail-list">${TRAILS.map((t,i)=>trailCard(t,i)).join('')}</div>
+  <p class="text-[10.5px] text-mist mt-5 leading-relaxed">共 ${RESORT.trails} 条雪道，总长 36.9 km，含 6 条国际雪联（FIS）认证赛道。难度以线型区分：实线初级、虚线中级、点划线高级。</p>`;
+}
+
+function trailCard(t, idx) {
+  if (!t.open) {
+    return `<div class="rounded-card bg-surface border border-line p-3.5 opacity-60" data-grade="${t.grade}">
+      <div class="flex items-center gap-2.5">
+        <span class="text-mist">${trailLine(t.line)}</span>
+        <span class="text-[13px] font-medium">${esc(t.name)}</span>
+        <span class="text-[10.5px] text-mist">${esc(t.grade)}</span>
+        <span class="ml-auto text-[10.5px] text-mist">未开放</span>
+      </div>
+      <p class="text-[11px] text-mist mt-2">${esc(t.len)} · ${esc(t.slope)} · 今日待开放</p>
+    </div>`;
+  }
+  const st = densityText(t.density);
+  const w = Math.min(100, Math.round(t.density / 40 * 100));
+  return `<div class="rounded-card bg-surface border border-line p-3.5" data-grade="${t.grade}">
+    <div class="flex items-center gap-2.5">
+      <span class="text-brand">${trailLine(t.line)}</span>
+      <span class="text-[13px] font-medium">${esc(t.name)}</span>
+      <span class="text-[10.5px] text-mist">${esc(t.grade)}</span>
+      <span class="ml-auto px-1.5 py-[2px] rounded-[4px] border text-[10px] ${st.b} ${st.c}">${st.t}</span>
+    </div>
+    <p class="text-[11px] text-mist mt-2">${esc(t.len)} · ${esc(t.slope)}</p>
+    <div class="mt-2.5 h-[4px] rounded-full bg-brandsoft overflow-hidden">
+      <div class="bar h-full rounded-full" id="tbar-${idx}" style="width:${w}%;background:${t.density>=30?'var(--warn)':'var(--brand)'}"></div>
+    </div>
+    <div class="mt-2 flex items-center justify-between text-[11px]">
+      <span class="text-mist">密度 <span class="font-mono text-ink" id="td-${idx}">${t.density}</span> 人/公顷</span>
+      <span class="text-mist font-mono">30 min 后 <span id="td30-${idx}">${t.d30}</span></span>
+    </div>
+  </div>`;
+}
+
+function guestService() {
+  const cats = ['全部','住宿','餐饮','租赁','教学','医疗','交通','停车'];
+  return `
+  <div class="flex gap-2 overflow-x-auto no-sb -mx-4 px-4 pb-1" id="cat-filter">
+    ${cats.map((c,i)=>`<button data-cat="${c}" class="cat-btn focusable shrink-0 px-3 py-1.5 text-[12px] rounded-chip border ${i===0?'bg-brand text-white border-brand':'border-line text-mist bg-surface'}">${c}</button>`).join('')}
+  </div>
+  <div class="mt-3.5 space-y-2.5" id="service-list">${SERVICES.map(s=>serviceCard(s)).join('')}</div>`;
+}
+
+function serviceCard(s) {
+  return `<div class="rounded-card bg-surface border border-line overflow-hidden" data-cat="${s.cat}">
+    <div class="p-3.5">
+      <div class="flex items-baseline gap-2">
+        <span class="text-[10px] px-1.5 py-[2px] rounded-[4px] bg-brandsoft text-brand">${esc(s.cat)}</span>
+        <span class="text-[13.5px] font-medium">${esc(s.name)}</span>
+        <span class="ml-auto font-mono text-[10px] text-mist">${esc(s.code)}</span>
+      </div>
+      <p class="text-[11.5px] mt-2">${esc(s.info)}</p>
+      <p class="text-[11px] text-mist mt-1">${esc(s.dist)}</p>
+      <div class="detail hidden text-[11.5px] text-mist mt-2.5 pt-2.5 border-t border-line leading-relaxed">${esc(s.detail)}</div>
+    </div>
+    <button class="more focusable w-full text-left px-3.5 py-2.5 border-t border-line text-[11.5px] text-brand">展开详情</button>
+  </div>`;
+}
+
+function guestEco() {
+  const pct = Math.min(100, Math.round(ECO.points / 420 * 100));
+  return `
+  <div class="rounded-card border border-line overflow-hidden" style="background:linear-gradient(180deg,#EAF6EF 0%,#FFFFFF 62%)">
+    <div class="p-4">
+      <div class="flex items-center gap-2">
+        <span class="text-eco w-4 h-4 inline-block">${ICON.eco}</span>
+        <span class="text-[12px] text-eco font-medium">我的碳积分</span>
+      </div>
+      <div class="mt-2 flex items-baseline gap-2">
+        <span class="font-mono text-[32px] leading-none font-semibold" id="eco-points">${ECO.points}</span>
+        <span class="text-[12px] text-mist">分</span>
+        <span class="ml-auto text-[11px] text-mist">≈ 减碳 <span class="font-mono text-eco">${ECO.co2}</span> kg</span>
+      </div>
+      <div class="mt-4 grid grid-cols-2 gap-px bg-line rounded-chip overflow-hidden">
+        <div class="bg-surface px-3 py-2.5"><div class="text-[10.5px] text-mist">今日滑行</div><div class="font-mono text-[14px] mt-1">${ECO.todayKm}<span class="text-[10.5px] text-mist ml-0.5">km</span></div></div>
+        <div class="bg-surface px-3 py-2.5"><div class="text-[10.5px] text-mist">本雪季累计</div><div class="font-mono text-[14px] mt-1">${ECO.totalKm}<span class="text-[10.5px] text-mist ml-0.5">km</span></div></div>
+      </div>
+      <div class="mt-4">
+        <div class="flex items-center justify-between text-[11px] mb-1.5">
+          <span class="text-mist">距「万龙定制毛线帽」还差 <span class="font-mono text-ink" id="eco-gap">104</span> 分</span>
+          <span class="font-mono text-mist" id="eco-pct">${pct}%</span>
+        </div>
+        <div class="h-[5px] rounded-full bg-brandsoft overflow-hidden">
+          <div class="bar h-full rounded-full bg-eco" id="eco-bar" style="width:${pct}%"></div>
+        </div>
+      </div>
+    </div>
+    <div class="px-4 py-2.5 border-t border-line text-[10.5px] text-mist leading-relaxed">
+      换算规则：滑行 1 km = ${ECO.kmToPoint} 碳积分；雪场绿电运营，每 1 km 折算减排 ${ECO.kmToCo2} kg CO₂。
+    </div>
+  </div>
+
+  <div class="mt-6">
+    ${sectionHead('积分兑换', `当前可用 ${ECO.points} 分`)}
+    <div class="space-y-2.5">${REWARDS.map(r=>rewardCard(r)).join('')}</div>
+  </div>
+
+  <div class="mt-6 rounded-card bg-surface border border-line p-4">
+    ${sectionHead('雪场低碳动作', '本雪季')}
+    <ul class="space-y-2.5 text-[12px]">
+      <li class="flex justify-between"><span class="text-mist">绿电占比</span><span class="font-mono text-eco">${OPS.greenPower}%</span></li>
+      <li class="flex justify-between"><span class="text-mist">造雪与索道能效改造</span><span class="font-mono">进行中</span></li>
+      <li class="flex justify-between"><span class="text-mist">雪具循环消毒再租</span><span class="font-mono">1,400 套</span></li>
+      <li class="flex justify-between"><span class="text-mist">太子城站接驳替代自驾</span><span class="font-mono text-eco">-1.2 t / 日</span></li>
+    </ul>
+  </div>`;
+}
+
+function rewardCard(r) {
+  const can = ECO.points >= r.cost;
+  return `<div class="rounded-card bg-surface border border-line p-3.5 flex items-center gap-3">
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] px-1.5 py-[2px] rounded-[4px] bg-brandsoft text-brand shrink-0">${esc(r.tag)}</span>
+        <span class="text-[12.5px] font-medium truncate">${esc(r.name)}</span>
+      </div>
+      <div class="mt-1.5 text-[11px] text-mist">${esc(r.stock)}</div>
+    </div>
+    <div class="text-right shrink-0">
+      <div class="font-mono text-[13px] ${can?'text-eco':'text-mist'}">${r.cost}</div>
+      <button class="redeem focusable mt-1 px-2.5 py-1 text-[11px] rounded-chip border ${can?'border-eco text-eco':'border-line text-mist'}" data-cost="${r.cost}" data-name="${esc(r.name)}">${can?'兑换':'不足'}</button>
+    </div>
+  </div>`;
+}
+
+function guestMe() {
+  return `
+  <div class="rounded-card bg-surface border border-line p-4">
+    <div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded-full bg-brandsoft text-brand grid place-items-center shrink-0"><span class="w-5 h-5 block">${ICON.me}</span></div>
+      <div class="min-w-0">
+        <div class="text-[14px] font-medium">雪友 孙明</div>
+        <div class="text-[11px] text-mist mt-0.5">雪票 · 含雪具（缆车 + 鞋板杖头盔）</div>
+      </div>
+      <span class="ml-auto text-[10.5px] px-2 py-[3px] rounded-chip bg-brandsoft text-brand shrink-0">有效</span>
+    </div>
+    <div class="mt-3.5 pt-3.5 border-t border-line grid grid-cols-2 gap-y-3 text-[11.5px]">
+      <div><div class="text-mist text-[10.5px]">票种时长</div><div class="font-mono mt-1">1 天（日场）</div></div>
+      <div><div class="text-mist text-[10.5px]">入园时间</div><div class="font-mono mt-1">08:31</div></div>
+      <div><div class="text-mist text-[10.5px]">票面类型</div><div class="font-mono mt-1">W03 自带板</div></div>
+      <div><div class="text-mist text-[10.5px]">夜场</div><div class="font-mono mt-1">未购 · 18:30 起</div></div>
+    </div>
+  </div>
+
+  <div class="mt-6">
+    ${sectionHead('今日滑行', '索道闸机与姿态识别联动统计')}
+    <div class="grid grid-cols-2 gap-2.5">
+      ${[['滑行里程','18.6 km'],['滑行趟数','11 趟'],['垂直落差','4,180 m'],['最高时速','62.4 km/h']].map(([k,v])=>`<div class="rounded-card bg-surface border border-line px-3.5 py-3"><div class="text-[10.5px] text-mist">${k}</div><div class="font-mono text-[15px] mt-1.5">${v}</div></div>`).join('')}
+    </div>
+  </div>
+
+  <div class="mt-6">
+    ${sectionHead('安全提醒', '来自雪道姿态识别')}
+    <div class="rounded-card bg-surface border border-line divide-y divide-line">
+      <div class="px-3.5 py-3">
+        <div class="flex items-center gap-2">
+          <span class="text-[12.5px]">12:41 长龙道 K1+200</span>
+          <span class="ml-auto px-1.5 py-[2px] rounded-[4px] border border-warn text-warn text-[10px]">中</span>
+        </div>
+        <p class="text-[11.5px] text-mist mt-1.5">检测到前方 60 m 有人摔倒，巡逻队已出动。请减速通过。</p>
+      </div>
+      <div class="px-3.5 py-3">
+        <div class="flex items-center gap-2">
+          <span class="text-[12.5px]">11:08 卧龙道起点</span>
+          <span class="ml-auto px-1.5 py-[2px] rounded-[4px] border border-line text-mist text-[10px]">低</span>
+        </div>
+        <p class="text-[11.5px] text-mist mt-1.5">同行人未佩戴头盔，已在闸机处提示。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-6 rounded-card bg-surface border border-line overflow-hidden">
+    <div class="px-3.5 py-3 flex items-center justify-between">
+      <span class="text-[12.5px]">紧急求助</span>
+      <span class="text-[11px] text-mist">巡逻队平均出警 4 min</span>
+    </div>
+    <button class="sos focusable w-full py-3 border-t border-line text-[13px] text-warn font-medium">一键呼叫雪地巡逻</button>
+  </div>`;
+}
+
+/* ============ 雪场端 ============ */
+function opsDash() {
+  const cards = [
+    ['在园人数', OPS.inPark.toLocaleString(), '人', 'text-ink'],
+    ['今日进场', OPS.visitors.toLocaleString(), '人', 'text-ink'],
+    ['开放雪道', OPS.trailsOpen + ' / ' + RESORT.trails, '条', 'text-ink'],
+    ['待处置事件', OPS.alerts, '起', 'text-warn']
+  ];
+  return `
+  <div class="grid grid-cols-2 gap-2.5">
+    ${cards.map(([k,v,u,c])=>`<div class="rounded-card bg-surface border border-line px-3.5 py-3">
+      <div class="text-[10.5px] text-mist">${k}</div>
+      <div class="mt-1.5 flex items-baseline gap-1"><span class="font-mono text-[21px] leading-none ${c}">${v}</span><span class="text-[10.5px] text-mist">${u}</span></div>
+    </div>`).join('')}
+  </div>
+
+  <div class="mt-4 rounded-card bg-surface border border-line p-4">
+    ${sectionHead('雪场关键指标', '万龙滑雪场')}
+    <div class="grid grid-cols-2 gap-y-3 text-[11.5px]">
+      <div><div class="text-mist text-[10.5px]">最高海拔</div><div class="font-mono mt-1">${RESORT.altitude}</div></div>
+      <div><div class="text-mist text-[10.5px]">最大落差</div><div class="font-mono mt-1">${RESORT.drop}</div></div>
+      <div><div class="text-mist text-[10.5px]">雪道 / 总长</div><div class="font-mono mt-1">${RESORT.trails} 条 / 36.9 km</div></div>
+      <div><div class="text-mist text-[10.5px]">索道 / 魔毯</div><div class="font-mono mt-1">${RESORT.lifts} 条 / ${RESORT.carpets} 条</div></div>
+      <div><div class="text-mist text-[10.5px]">运力</div><div class="font-mono mt-1">${RESORT.capacity.toLocaleString()} 人/时</div></div>
+      <div><div class="text-mist text-[10.5px]">绿电占比</div><div class="font-mono mt-1 text-eco">${OPS.greenPower}%</div></div>
+    </div>
+  </div>
+
+  <div class="mt-4 rounded-card bg-surface border border-line p-4">
+    ${sectionHead('运营时段')}
+    <div class="space-y-2 text-[12px]">
+      <div class="flex justify-between"><span class="text-mist">日场</span><span class="font-mono">08:30 – 16:30</span></div>
+      <div class="flex justify-between"><span class="text-mist">夜场</span><span class="font-mono">18:30 – 21:30</span></div>
+      <div class="flex justify-between"><span class="text-mist">压雪作业</span><span class="font-mono">16:40 – 18:20</span></div>
+    </div>
+  </div>
+
+  <p class="text-[10.5px] text-mist mt-6 leading-relaxed">场馆静态参数取自万龙滑雪场公开资料；实时运营数据为演示示意值。</p>`;
+}
+
+function opsFlow() {
+  const total = LIFTS.reduce((s,l)=>s+l.queue,0);
+  const peak = LIFTS.reduce((a,b)=>a.queue>b.queue?a:b);
+  const hot = TRAILS.filter(t=>t.open).slice().sort((a,b)=>b.density-a.density).slice(0,3);
+  return `
+  <div class="rounded-card bg-surface border border-line p-4">
+    ${sectionHead('索道排队总览', `当前合计 ${total} 人排队`)}
+    <div class="space-y-3">${LIFTS.map((l,i)=>{
+      const r = loadState(l.queue, l.cap), st = loadText(r);
+      return `<div>
+        <div class="flex items-center gap-2 text-[11.5px]">
+          <span class="font-medium shrink-0">${esc(l.no)}</span>
+          <span class="text-mist text-[10.5px] truncate">${esc(l.serve)}</span>
+          <span class="ml-auto font-mono shrink-0">${l.queue}<span class="text-mist text-[10.5px]"> 人</span></span>
+        </div>
+        <div class="mt-1.5 flex items-center gap-2">
+          <div class="flex-1 h-[4px] rounded-full bg-brandsoft overflow-hidden">
+            <div class="bar h-full rounded-full" id="obar-${i}" style="width:${Math.round(r*100)}%;background:${loadColor(r)}"></div>
+          </div>
+          <span class="text-[10px] shrink-0 w-8 text-right ${st.c}">${st.t}</span>
+        </div>
+      </div>`;
+    }).join('')}</div>
+  </div>
+
+  <div class="mt-4 rounded-card bg-surface border border-line p-4">
+    ${sectionHead('重点提示', '需人工关注')}
+    <div class="space-y-2.5 text-[12px]">
+      <div class="flex items-start gap-2">
+        <span class="mt-[6px] w-1.5 h-1.5 rounded-full bg-warn shrink-0"></span>
+        <p><span class="font-medium">${esc(peak.no)}</span> 排队 <span class="font-mono">${peak.queue}</span> 人，30 min 后预计升至 <span class="font-mono">${peak.q30}</span> 人，建议加开临时通道。</p>
+      </div>
+      <div class="flex items-start gap-2">
+        <span class="mt-[6px] w-1.5 h-1.5 rounded-full bg-warn shrink-0"></span>
+        <p>热区雪道：${hot.map(h=>`${esc(h.name)}（<span class="font-mono">${h.density}</span>）`).join('、')}，建议引导分流至玉龙道、猛龙道。</p>
+      </div>
+      <div class="flex items-start gap-2">
+        <span class="mt-[6px] w-1.5 h-1.5 rounded-full bg-brand shrink-0"></span>
+        <p>7 号索道夜场专用，当前停运；魔毯 A/B/C 教学区排队 <span class="font-mono">17</span> 人，运力充足。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4 rounded-card bg-surface border border-line p-4">
+    ${sectionHead('雪道密度分布', '人/公顷')}
+    <div class="space-y-2">${TRAILS.filter(t=>t.open).map(t=>{
+      const w = Math.min(100, Math.round(t.density/40*100));
+      return `<div class="flex items-center gap-2.5 text-[11.5px]">
+        <span class="w-[68px] shrink-0 truncate">${esc(t.name)}</span>
+        <div class="flex-1 h-[4px] rounded-full bg-brandsoft overflow-hidden">
+          <div class="bar h-full rounded-full" style="width:${w}%;background:${t.density>=30?'var(--warn)':'var(--brand)'}"></div>
+        </div>
+        <span class="font-mono w-6 text-right shrink-0">${t.density}</span>
+      </div>`;
+    }).join('')}</div>
+  </div>`;
+}
+
+function opsSafety() {
+  const on = CAMS.filter(c=>c.on).length;
+  return `
+  <div class="rounded-card bg-surface border border-line p-4">
+    ${sectionHead('视频监控', `${on} / ${CAMS.length} 路在线`)}
+    <div class="grid grid-cols-2 gap-2">
+      ${CAMS.map(c=>`<div class="rounded-chip border ${c.on?'border-line':'border-line'} bg-page px-2.5 py-2.5 ${c.on?'':'opacity-55'}">
+        <div class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full ${c.on?'bg-eco':'bg-mist'} shrink-0"></span>
+          <span class="font-mono text-[10.5px] text-mist">${c.id}</span>
+        </div>
+        <div class="text-[11.5px] mt-1.5 truncate">${esc(c.loc)}</div>
+        <div class="text-[10px] mt-1 ${c.on?'text-eco':'text-mist'}">${c.on?'正常':'离线'}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <div class="mt-4">
+    ${sectionHead('事件流', '姿态识别自动上报 · 近 30 min')}
+    <div class="rounded-card bg-surface border border-line divide-y divide-line" id="event-list">
+      ${EVENTS.map(e=>eventRow(e)).join('')}
+    </div>
+  </div>
+
+  <button class="sos focusable mt-4 w-full py-3 rounded-card border border-warn text-warn text-[13px] font-medium bg-surface">启动应急预案（SOS 广播）</button>
+
+  <p class="text-[10.5px] text-mist mt-5 leading-relaxed">监控与事件数据为演示示意；真实系统需对接雪场视频专网与救援调度平台。</p>`;
+}
+
+function eventRow(e) {
+  const rc = e.risk === '中' ? 'border-warn text-warn' : 'border-line text-mist';
+  return `<div class="px-3.5 py-3">
+    <div class="flex items-center gap-2">
+      <span class="text-[12.5px]">${esc(e.type)}</span>
+      <span class="ml-auto shrink-0 px-1.5 py-[2px] rounded-[4px] border text-[10px] ${rc}">${esc(e.risk)}</span>
+    </div>
+    <div class="mt-1.5 flex items-center gap-2 text-[11px] text-mist">
+      <span class="truncate">${esc(e.loc)}</span>
+      <span class="font-mono shrink-0">${esc(e.cam)}</span>
+    </div>
+    <div class="mt-1.5 text-[11px] text-brand">${esc(e.act)}</div>
+  </div>`;
+}
+
+function opsDispatch() {
+  const rows = [
+    ['雪地巡逻', '18 人在岗', '4 组', '正常', 'text-eco'],
+    ['压雪车', '3 台 · 2 台计划作业', '16:40 出动', '待命', 'text-mist'],
+    ['造雪机', '风机 22 / 水枪 8', '夜间时段', '待命', 'text-mist'],
+    ['医疗站', '医护 4 人 · 巡逻员联动', '1 号索道下站', '正常', 'text-eco'],
+    ['雪具大厅', '租赁 1,400+ 套 · 排队 8 人', '2 层 12 窗口', '正常', 'text-eco'],
+    ['接驳车', '太子城站往返', '下一班 08:55', '运行中', 'text-eco']
+  ];
+  return `
+  <div class="rounded-card bg-surface border border-line divide-y divide-line">
+    ${rows.map(([k,v,s,st,c])=>`<div class="px-3.5 py-3">
+      <div class="flex items-center gap-2">
+        <span class="text-[12.5px] font-medium">${k}</span>
+        <span class="ml-auto text-[10.5px] ${c}">${st}</span>
+      </div>
+      <div class="mt-1.5 flex items-center gap-2 text-[11px] text-mist">
+        <span class="truncate">${v}</span>
+        <span class="ml-auto font-mono shrink-0">${s}</span>
+      </div>
+    </div>`).join('')}
+  </div>
+
+  <div class="mt-4 rounded-card bg-surface border border-line p-4">
+    ${sectionHead('调度建议', '基于实时人流')}
+    <ol class="space-y-2.5 text-[12px] list-decimal list-inside marker:text-mist">
+      <li>1 号索道排队 <span class="font-mono">86</span> 人，建议增开 2 号通道，将客流导向玉龙道。</li>
+      <li>雪具大厅美食广场等候 <span class="font-mono">22</span> min，建议开放三层临时餐区。</li>
+      <li>长龙道 K1+200 摔倒事件已处置，巡逻队可回撤至 1 号索道下站待命。</li>
+      <li>夜场 18:30 前完成 7 号索道试运行与照明巡检。</li>
+    </ol>
+  </div>
+
+  <div class="mt-4 rounded-card bg-surface border border-line p-4">
+    ${sectionHead('人员与车辆', '在岗情况')}
+    <div class="grid grid-cols-2 gap-2.5">
+      ${[['滑雪学校教练','312 人'],['索道运维','24 人'],['巡逻队','18 人'],['医疗值守','4 人']].map(([k,v])=>`<div class="px-3 py-2.5 bg-page rounded-chip"><div class="text-[10.5px] text-mist">${k}</div><div class="font-mono text-[12.5px] mt-1">${v}</div></div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function opsEco() {
+  const items = [
+    ['绿电占比', OPS.greenPower + '%', '风电 + 光伏直供', OPS.greenPower],
+    ['本季累计用电', OPS.kwh.toLocaleString() + ' kWh', '较上季 -9.4%', 74],
+    ['造雪能耗', OPS.snowmakingKwh.toLocaleString() + ' kWh', '占比 43%', 43],
+    ['索道能耗', OPS.liftKwh.toLocaleString() + ' kWh', '占比 26%', 26],
+    ['累计减碳', OPS.co2Cut + ' t CO₂', '折算约 1,900 棵树', 61]
+  ];
+  return `
+  <div class="rounded-card border border-line overflow-hidden" style="background:linear-gradient(180deg,#EAF6EF 0%,#FFFFFF 62%)">
+    <div class="p-4">
+      <div class="flex items-center gap-2">
+        <span class="text-eco w-4 h-4 inline-block">${ICON.recycle}</span>
+        <span class="text-[12px] text-eco font-medium">雪场低碳运营</span>
+      </div>
+      <div class="mt-2 flex items-baseline gap-2">
+        <span class="font-mono text-[30px] leading-none font-semibold">${OPS.greenPower}%</span>
+        <span class="text-[12px] text-mist">绿电占比</span>
+        <span class="ml-auto text-[11px] text-mist">本季减碳 <span class="font-mono text-eco">${OPS.co2Cut}</span> t</span>
+      </div>
+      <div class="mt-3.5 h-[5px] rounded-full bg-brandsoft overflow-hidden">
+        <div class="bar h-full rounded-full bg-eco" style="width:${OPS.greenPower}%"></div>
+      </div>
+    </div>
+    <div class="px-4 py-2.5 border-t border-line text-[10.5px] text-mist leading-relaxed">
+      万龙滑雪场持续推进造雪与索道能效改造，并引导雪友通过太子城站接驳替代自驾。
+    </div>
+  </div>
+
+  <div class="mt-4 rounded-card bg-surface border border-line p-4">
+    ${sectionHead('能耗结构', '本雪季累计')}
+    <div class="space-y-3.5">${items.map(([k,v,d,w])=>`<div>
+      <div class="flex items-center gap-2 text-[11.5px]">
+        <span class="shrink-0">${k}</span>
+        <span class="ml-auto font-mono shrink-0">${v}</span>
+      </div>
+      <div class="mt-1.5 h-[4px] rounded-full bg-brandsoft overflow-hidden">
+        <div class="bar h-full rounded-full bg-eco" style="width:${w}%"></div>
+      </div>
+      <div class="mt-1 text-[10.5px] text-mist">${d}</div>
+    </div>`).join('')}</div>
+  </div>
+
+  <div class="mt-4 rounded-card bg-surface border border-line p-4">
+    ${sectionHead('雪友低碳贡献', '本日')}
+    <div class="grid grid-cols-3 gap-px bg-line rounded-chip overflow-hidden">
+      ${[['滑行里程','12,846 km'],['兑换积分','86,420'],['减碳量','2.31 t']].map(([k,v])=>`<div class="bg-surface px-2.5 py-3"><div class="text-[10.5px] text-mist">${k}</div><div class="font-mono text-[12.5px] mt-1.5">${v}</div></div>`).join('')}
+    </div>
+  </div>`;
+}
+
+/* ============ 视图注册与导航 ============ */
+const VIEWS = {
+  guest: [
+    { key:'snow',    label:'雪况', icon:'snow',    render:guestSnow },
+    { key:'trails',  label:'雪道', icon:'trail',   render:guestTrails },
+    { key:'service', label:'服务', icon:'service', render:guestService },
+    { key:'eco',     label:'低碳', icon:'eco',     render:guestEco },
+    { key:'me',      label:'我的', icon:'me',      render:guestMe }
+  ],
+  ops: [
+    { key:'dash',     label:'总览', icon:'dash',    render:opsDash },
+    { key:'flow',     label:'客流', icon:'flow',    render:opsFlow },
+    { key:'safety',   label:'安防', icon:'shield',  render:opsSafety },
+    { key:'dispatch', label:'调度', icon:'gear',    render:opsDispatch },
+    { key:'eco',      label:'低碳', icon:'recycle', render:opsEco }
+  ]
+};
+
+const state = { role: 'guest', tab: { guest: 'snow', ops: 'dash' }, filters: { grade: '全部', cat: '全部' } };
+
+function currentViews() { return VIEWS[state.role]; }
+function currentKey() { return state.tab[state.role]; }
+
+function renderTabbar() {
+  const bar = document.getElementById('tabbar');
+  const list = currentViews();
+  bar.innerHTML = list.map(v => {
+    const on = v.key === currentKey();
+    return `<button class="tab focusable py-2.5 flex flex-col items-center gap-1 ${on?'text-brand':'text-mist'}" data-key="${v.key}" aria-current="${on?'page':'false'}">
+      <span class="w-[21px] h-[21px] block">${ICON[v.icon]}</span>
+      <span class="text-[10px] leading-none">${v.label}</span>
+    </button>`;
+  }).join('');
+}
+
+function renderViews() {
+  const wrap = document.getElementById('views');
+  const list = currentViews();
+  wrap.innerHTML = list.map(v => `<section class="view${v.key===currentKey()?' active':''}" data-view="${v.key}">${v.render()}</section>`).join('');
+}
+
+function renderAll() {
+  document.querySelectorAll('.role-btn').forEach(b => {
+    const on = b.dataset.role === state.role;
+    b.classList.toggle('bg-surface', on);
+    b.classList.toggle('text-brand', on);
+    b.classList.toggle('font-semibold', on);
+    b.classList.toggle('shadow-sm', on);
+    b.classList.toggle('text-mist', !on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  renderTabbar();
+  renderViews();
+}
+
+function switchTab(key) {
+  if (key === currentKey()) return;
+  state.tab[state.role] = key;
+  const wrap = document.getElementById('views');
+  wrap.querySelectorAll('.view').forEach(s => s.classList.toggle('active', s.dataset.view === key));
+  renderTabbar();
+}
+
+function switchRole(role) {
+  if (role === state.role) return;
+  state.role = role;
+  state.filters = { grade: '全部', cat: '全部' };
+  renderAll();
+  document.getElementById('views').scrollIntoView({ block: 'start' });
+}
+
+/* ============ 交互 ============ */
+document.addEventListener('click', function (ev) {
+  const roleBtn = ev.target.closest('.role-btn');
+  if (roleBtn) { switchRole(roleBtn.dataset.role); return; }
+
+  const tab = ev.target.closest('.tab');
+  if (tab) { switchTab(tab.dataset.key); return; }
+
+  const more = ev.target.closest('.more');
+  if (more) {
+    const box = more.parentElement.querySelector('.detail');
+    const open = !box.classList.contains('hidden');
+    box.classList.toggle('hidden', open);
+    more.textContent = open ? '展开详情' : '收起详情';
+    return;
+  }
+
+  const grade = ev.target.closest('.grade-btn');
+  if (grade) {
+    state.filters.grade = grade.dataset.grade;
+    document.querySelectorAll('.grade-btn').forEach(b => {
+      const on = b.dataset.grade === state.filters.grade;
+      b.classList.toggle('bg-brand', on);
+      b.classList.toggle('text-white', on);
+      b.classList.toggle('border-brand', on);
+      b.classList.toggle('text-mist', !on);
+      b.classList.toggle('bg-surface', !on);
+      b.classList.toggle('border-line', !on);
+    });
+    document.querySelectorAll('#trail-list [data-grade]').forEach(card => {
+      card.style.display = (state.filters.grade === '全部' || card.dataset.grade === state.filters.grade) ? '' : 'none';
+    });
+    return;
+  }
+
+  const cat = ev.target.closest('.cat-btn');
+  if (cat) {
+    state.filters.cat = cat.dataset.cat;
+    document.querySelectorAll('.cat-btn').forEach(b => {
+      const on = b.dataset.cat === state.filters.cat;
+      b.classList.toggle('bg-brand', on);
+      b.classList.toggle('text-white', on);
+      b.classList.toggle('border-brand', on);
+      b.classList.toggle('text-mist', !on);
+      b.classList.toggle('bg-surface', !on);
+      b.classList.toggle('border-line', !on);
+    });
+    document.querySelectorAll('#service-list [data-cat]').forEach(card => {
+      card.style.display = (state.filters.cat === '全部' || card.dataset.cat === state.filters.cat) ? '' : 'none';
+    });
+    return;
+  }
+
+  const redeem = ev.target.closest('.redeem');
+  if (redeem) {
+    const cost = Number(redeem.dataset.cost);
+    if (ECO.points < cost) { toast('碳积分不足，再滑 ' + Math.ceil((cost - ECO.points) / ECO.kmToPoint) + ' km 即可兑换'); return; }
+    ECO.points -= cost;
+    toast('已兑换「' + redeem.dataset.name + '」，剩余 ' + ECO.points + ' 分');
+    renderViews();
+    return;
+  }
+
+  const sos = ev.target.closest('.sos');
+  if (sos) { toast('已发送求助信号，雪地巡逻队正在响应'); return; }
+});
+
+let toastTimer = null;
+function toast(msg) {
+  const box = document.getElementById('toast');
+  document.getElementById('toast-text').textContent = msg;
+  box.classList.remove('hide');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => box.classList.add('hide'), 2200);
+}
+
+/* 低碳积分与进度同步 */
+function syncEco() {
+  const pts = document.getElementById('eco-points');
+  const bar = document.getElementById('eco-bar');
+  const gap = document.getElementById('eco-gap');
+  const pct = document.getElementById('eco-pct');
+  if (pts) pts.textContent = ECO.points;
+  const MAX = 420;
+  const p = Math.min(100, Math.round(ECO.points / MAX * 100));
+  if (bar) bar.style.width = Math.max(0, p) + '%';
+  if (gap) gap.textContent = Math.max(0, MAX - ECO.points);
+  if (pct) pct.textContent = p + '%';
+}
+
+/* 时钟 */
+function tickClock() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  const el = document.getElementById('clock');
+  if (el) el.textContent = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+
+/* 模拟实时刷新：索道排队 + 雪道密度 */
+function jitter(v, step, min, max) {
+  const n = v + Math.round((Math.random() * 2 - 1) * step);
+  return Math.max(min, Math.min(max, n));
+}
+
+function refreshLive() {
+  LIFTS.forEach((l, i) => {
+    l.queue = jitter(l.queue, 6, 0, l.cap);
+    l.q30 = jitter(l.q30, 5, 0, l.cap);
+    const r = loadState(l.queue, l.cap);
+    const bar = document.getElementById('bar-' + i);
+    const q = document.getElementById('q-' + i);
+    const q30 = document.getElementById('q30-' + i);
+    if (bar) { bar.style.width = Math.round(r * 100) + '%'; bar.style.background = loadColor(r); }
+    if (q) q.textContent = l.queue;
+    if (q30) q30.textContent = l.q30;
+  });
+  TRAILS.forEach((t, i) => {
+    if (!t.open) return;
+    t.density = jitter(t.density, 3, 0, 40);
+    t.d30 = jitter(t.d30, 3, 0, 40);
+    const tb = document.getElementById('tbar-' + i);
+    const td = document.getElementById('td-' + i);
+    const td30 = document.getElementById('td30-' + i);
+    if (tb) {
+      tb.style.width = Math.min(100, Math.round(t.density / 40 * 100)) + '%';
+      tb.style.background = t.density >= 30 ? 'var(--warn)' : 'var(--brand)';
+    }
+    if (td) td.textContent = t.density;
+    if (td30) td30.textContent = t.d30;
+  });
+  if (state.role === 'ops' && currentKey() === 'flow') {
+    document.querySelectorAll('#views [id^="obar-"]').forEach((b, i) => {
+      const l = LIFTS[i]; if (!l) return;
+      const r = loadState(l.queue, l.cap);
+      b.style.width = Math.round(r * 100) + '%';
+      b.style.background = loadColor(r);
+    });
+  }
+}
+
+/* 模拟事件流推送 */
+const RANDOM_EVENTS = [
+  { type:'摔倒 · 侧向失控', risk:'中', loc:'金龙道下段', cam:'CAM-02', act:'巡逻队已出动' },
+  { type:'雪道拥堵', risk:'中', loc:'长龙道出口段', cam:'CAM-04', act:'已推送减速广播' },
+  { type:'雪具遗落', risk:'低', loc:'1 号索道下站', cam:'CAM-01', act:'已广播招领' },
+  { type:'越线进入野雪', risk:'中', loc:'野雪区入口西侧', cam:'CAM-11', act:'巡逻队前往劝返' },
+  { type:'静止超时', risk:'低', loc:'玉龙道下段', cam:'CAM-08', act:'已核实无碍' }
+];
+
+function pushEvent() {
+  const list = document.getElementById('event-list');
+  if (!list) return;
+  const e = RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
+  const div = document.createElement('div');
+  div.className = 'feed-item feed-enter';
+  div.innerHTML = eventRow(e);
+  list.insertBefore(div, list.firstChild);
+  while (list.children.length > 6) list.removeChild(list.lastChild);
+  requestAnimationFrame(() => div.classList.remove('feed-enter'));
+}
+
+/* 初始化 */
+renderAll();
+tickClock();
+syncEco();
+setInterval(tickClock, 1000);
+setInterval(refreshLive, 6000);
+setInterval(() => { if (state.role === 'ops' && currentKey() === 'safety') pushEvent(); }, 9000);
+</script>
+</body>
+</html>
